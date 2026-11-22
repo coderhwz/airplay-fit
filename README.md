@@ -1,8 +1,8 @@
-# AirPlay Fit
+# AirPlay Fit · Android TV AirPlay Receiver
 
-[简体中文](README.zh-CN.md)
+[Download APK](https://github.com/coderhwz/airplay-fit/releases/latest) · [简体中文](README.zh-CN.md)
 
-AirPlay Fit is a lightweight AirPlay receiver for Android TV and TV boxes. It gives you control over the picture on the TV, including when you mirror a video with scrolling comments.
+AirPlay Fit is a lightweight AirPlay receiver for Android TV and TV boxes, with iPhone and Mac screen mirroring, automatic black-border cropping, and picture controls for the TV remote. Use it to watch mobile videos on TV, including short-form video from Douyin and short dramas from Hongguo (红果短剧).
 
 ## Highlights
 
@@ -10,6 +10,15 @@ AirPlay Fit is a lightweight AirPlay receiver for Android TV and TV boxes. It gi
 - **Picture controls for the TV remote.** Switch between Auto crop, Original ratio, and Fill with a single press of **OK**. Open **More** for per-edge crop, fixed aspect ratios, zoom and pan, or 90° rotation. Picture settings carry over to the next session.
 - **AirPlay mirroring with a selectable 30 or 60 fps ceiling.** The sending device chooses the actual frame rate. Use the on-screen status panel to check the incoming rate, bitrate, and frames discarded by the decoder pipeline.
 - **Lightweight Android receiver.** About 295 KB for the current release build, with Android 5.1 as the minimum SDK. Supports iPhone and Mac mirroring, audio streaming, and compatible MP4 and HLS video handoff.
+
+## Watch Douyin and Hongguo short dramas on TV
+
+Connect your iPhone and TV box to the same local network. Open AirPlay Fit on the TV, then select it under **Control Center → Screen Mirroring** on the iPhone. Open Douyin (抖音) or Hongguo (红果短剧) and start playing.
+
+- For portrait clips, choose **Original ratio** to keep the complete picture. Side bars are expected on a landscape TV.
+- For landscape episodes with black borders inside the mirrored image, try **Auto crop**. For an edge-to-edge image, **Fill** preserves the aspect ratio and crops the overflow.
+
+Screen capture availability depends on the app and video. Direct playback through an in-app AirPlay button depends on the app providing a compatible video stream.
 
 ## Picture controls
 
@@ -44,16 +53,19 @@ AirPlay receiver for older Android TV hardware with H.264 mirroring, AAC-ELD, AA
 
 Uses legacy AirPlay pairing, FairPlay SAP v1 and the AirPlay 1 timing protocol, the same approach as UxPlay. FairPlay DRM content (Netflix, Apple TV+) cannot work. No PIN pairing. Photo display is implemented but untested.
 
-## Upstream device tests
+## Device compatibility
 
-| Device | OS | Result |
+The release uses one universal APK, with no bundled CPU-specific native libraries. The minimum Android version is 5.1 (API 22). Mirroring performance depends on the device's video decoder.
+
+| Device | OS | Verification |
 |---|---|---|
-| Fire TV 2nd gen (AFTS, MT8173) | Fire OS 5, Android 5.1 | 1080p30, ~6 ms decode latency |
-| Chromecast with Google TV 4K (sabrina) | Android 14 | 1080p30, 4K30 from a Mac |
-
-Senders: current iPhone and Mac (October 2026), screen mirroring and AirPlay audio.
+| Cmiot Box | Android 9, 32-bit ARM | AirPlay Fit tested with iPhone screen mirroring and automatic crop lock with scrolling comments. |
+| Fire TV 2nd gen (AFTS, MT8173) | Fire OS 5, Android 5.1 | Upstream receiver tested at 1080p30. AirPlay Fit verification pending. |
+| Chromecast with Google TV 4K (sabrina) | Android 14 | Upstream receiver tested at 1080p30 and 4K30 from a Mac. AirPlay Fit verification pending. |
 
 ## Build and install
+
+For a prebuilt APK, see [GitHub Releases](https://github.com/coderhwz/airplay-fit/releases/latest).
 
 Needs JDK 17 and Android SDK 34.
 

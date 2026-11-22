@@ -1,8 +1,8 @@
-# AirPlay Fit
+# AirPlay Fit · 安卓电视 AirPlay 投屏接收器
 
-[English](README.md)
+[下载 APK](https://github.com/coderhwz/airplay-fit/releases/latest) · [English](README.md)
 
-AirPlay Fit 是面向 Android TV 和安卓电视盒子的轻量 AirPlay 接收端。用 iPhone 或 Mac 投屏时，可以直接用电视遥控器调整画面，包括开着弹幕时自动去黑边。
+AirPlay Fit 是面向 Android TV 和安卓电视盒子的轻量 AirPlay 接收端，支持 iPhone 和 Mac 屏幕镜像、弹幕场景下自动去黑边，以及遥控器画面调整。适合把 iPhone 上的抖音短视频、红果短剧投到电视上看。
 
 ## 特色
 
@@ -10,6 +10,15 @@ AirPlay Fit 是面向 Android TV 和安卓电视盒子的轻量 AirPlay 接收�
 - **用电视遥控器控制画面。** 底部菜单提供「自动去黑边」「原比例」「等比填满」和「更多」。按一次确定就应用，画面设置会保留到下次投屏。
 - **镜像帧率上限可选 30 或 60 fps。** 默认 30 fps，切换后重新连接生效。发送端决定实际帧率，播放时按上键或信息键可以查看接收帧率、码率和解码丢帧。
 - **轻量接收端。** 当前 APK 约 295 KB，最低支持 Android 5.1（API 22），无需 root。支持屏幕镜像、音频投放和兼容的 MP4、HLS 视频直投。
+
+## 抖音、红果短剧怎么投屏到电视
+
+让 iPhone 和电视盒子连到同一局域网。在电视上打开 AirPlay Fit，然后在 iPhone「控制中心 → 屏幕镜像」里选择 AirPlay Fit，再打开抖音或红果短剧播放。
+
+- **竖屏短视频**可以选「原比例」保留人物和字幕。竖屏内容在横屏电视上显示时，左右留边属于正常现象。
+- **横屏剧集**如果画面四周有黑边，可以选「自动去黑边」。想铺满电视时，可以选「等比填满」，超出屏幕的部分会被裁掉。
+
+具体视频能否镜像取决于 App 和片源的播放限制。播放器内的 AirPlay 直投取决于 App 能否提供兼容的视频流。
 
 ## 画面模式
 
@@ -38,7 +47,19 @@ AirPlay Fit 是面向 Android TV 和安卓电视盒子的轻量 AirPlay 接收�
 
 视频直投取决于发送端提供的地址格式和权限。当前版本支持常见 HTTP(S) 视频地址，兼容范围之外包括 FairPlay DRM 视频和部分 App 私有中继格式。
 
+## 电视盒子适配
+
+各设备使用同一个通用 APK，安装包未内置按 CPU 架构区分的原生库。最低系统版本是 Android 5.1（API 22），镜像表现取决于设备的解码能力。
+
+| 设备 | 系统 | 验证情况 |
+| --- | --- | --- |
+| Cmiot Box | Android 9，32 位 ARM | 已实测 AirPlay Fit、iPhone 镜像，以及有弹幕时自动去黑边并锁定。 |
+| Fire TV 第 2 代（AFTS、MT8173） | Fire OS 5、Android 5.1 | 上游接收端实测 1080p30，AirPlay Fit 待验证。 |
+| Chromecast with Google TV 4K（sabrina） | Android 14 | 上游接收端实测 1080p30，Mac 发送可达 4K30，AirPlay Fit 待验证。 |
+
 ## 构建与安装
+
+预编译 APK 可从 [GitHub Releases](https://github.com/coderhwz/airplay-fit/releases/latest) 下载。
 
 准备 JDK 17、Android SDK 34 和 ADB。在项目根目录执行以下命令，最后一条适用于 Android 10 及以上，需要接收端从后台打开投屏画面时执行。
 
