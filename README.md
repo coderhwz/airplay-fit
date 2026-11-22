@@ -1,5 +1,7 @@
 # AirPlay Fit
 
+[简体中文](README.zh-CN.md)
+
 AirPlay Fit is a lightweight AirPlay receiver for Android TV and TV boxes. It gives you control over the picture on the TV, including when you mirror a video with scrolling comments.
 
 ## Highlights
