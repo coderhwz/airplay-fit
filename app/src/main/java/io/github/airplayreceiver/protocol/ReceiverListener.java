@@ -13,6 +13,18 @@ public interface ReceiverListener {
 
     void onMirroringStopped();
 
+    void onMirroringInterrupted();
+
+    void onPlaybackStarted(VideoPlayback video);
+
+    void onPlaybackStopped(VideoPlayback video);
+
+    void onPlaybackRate(VideoPlayback video, boolean playing);
+
+    void onPlaybackSeek(VideoPlayback video, long positionMs);
+
+    VideoPlayback.State playbackState(VideoPlayback video);
+
     /** New H.264 parameter sets, sent at start and whenever the picture size changes. */
     void onVideoParameters(byte[] sequenceParameterSet, byte[] pictureParameterSet, int width, int height);
 

@@ -14,6 +14,9 @@ import java.net.SocketException;
  * prefixes; type 1 payloads carry the SPS and PPS in clear.
  */
 final class MirrorStreamReceiver {
+    interface LostListener {
+        void onStreamLost(MirrorStreamReceiver source);
+    }
 
     private static final String TAG = "Mirror";
     private static final int HEADER_SIZE = 128;
@@ -22,6 +25,7 @@ final class MirrorStreamReceiver {
     private final ServerSocket serverSocket;
     private final MediaKeys.MirrorDecryptor decryptor;
     private final ReceiverListener listener;
+    private final LostListener lost;
     private Thread thread;
     private volatile boolean running;
     private volatile Socket connection;
@@ -29,9 +33,11 @@ final class MirrorStreamReceiver {
     private long framesReceived;
     private long bytesReceived;
 
-    MirrorStreamReceiver(MediaKeys.MirrorDecryptor decryptor, ReceiverListener listener) throws IOException {
+    MirrorStreamReceiver(MediaKeys.MirrorDecryptor decryptor, ReceiverListener listener, LostListener lost)
+            throws IOException {
         this.decryptor = decryptor;
         this.listener = listener;
+        this.lost = lost;
         serverSocket = new ServerSocket();
         serverSocket.setReuseAddress(true);
         serverSocket.bind(new InetSocketAddress(0));
@@ -56,6 +62,7 @@ final class MirrorStreamReceiver {
                     ReceiverLog.i(TAG, "Mirroring stream closed after " + framesReceived + " frames, "
                             + (bytesReceived / 1024) + " KiB");
                     closeQuietly();
+                    if (running) lost.onStreamLost(MirrorStreamReceiver.this);
                 }
             }
         }, "MirrorStreamReceiver");

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.github.airplayreceiver.protocol.ReceiverLog;
 import io.github.airplayreceiver.protocol.SequenceParameterSetRewriter;
@@ -89,7 +90,7 @@ final class VideoRenderer {
     private boolean cacheValid;
     private final MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
     private long framesDecoded;
-    private long framesDropped;
+    private final AtomicLong framesDropped = new AtomicLong();
     private long lastPresentation;
     private final java.util.HashMap<Long, Long> queuedAt = new java.util.HashMap<>();
     private long statisticsStart;
@@ -156,12 +157,18 @@ final class VideoRenderer {
     }
 
     /** Removes queued frames (and optionally parameters); surface changes stay, since callers may await them. */
-    private void removeQueued(boolean includeParameters) {
+    private int removeQueued(boolean includeParameters) {
+        int removedFrames = 0;
         for (Object item : queue.toArray()) {
             if (item instanceof Frame || (includeParameters && item instanceof Parameters)) {
-                queue.remove(item);
+                if (queue.remove(item) && item instanceof Frame) removedFrames++;
             }
         }
+        return removedFrames;
+    }
+
+    long droppedFrames() {
+        return framesDropped.get();
     }
 
     void onParameters(byte[] sps, byte[] pps, int width, int height) {
@@ -178,11 +185,12 @@ final class VideoRenderer {
         if (queue.size() > QUEUE_LIMIT) {
             // The decoder has fallen far behind; keep only what is needed to resume at a key frame.
             ReceiverLog.w(TAG, "Decoder backlog of " + queue.size() + " items, waiting for next key frame");
-            removeQueued(false);
+            framesDropped.addAndGet(removeQueued(false));
             awaitingKeyFrame = true;
         }
         if (awaitingKeyFrame) {
             if (!keyFrame) {
+                framesDropped.incrementAndGet();
                 return;
             }
             awaitingKeyFrame = false;
@@ -370,7 +378,7 @@ final class VideoRenderer {
                 if (buffer == null || buffer.capacity() < frame.data.length) {
                     ReceiverLog.w(TAG, "Frame of " + frame.data.length + " bytes does not fit the input buffer");
                     codec.queueInputBuffer(index, 0, 0, frame.presentationMicroseconds, 0);
-                    framesDropped++;
+                    framesDropped.incrementAndGet();
                     return;
                 }
                 buffer.clear();
@@ -387,7 +395,7 @@ final class VideoRenderer {
             }
             drainOutput(0);
             if (System.currentTimeMillis() > deadline) {
-                framesDropped++;
+                framesDropped.incrementAndGet();
                 ReceiverLog.w(TAG, "No decoder input buffer for 500 ms, dropping a frame");
                 return;
             }

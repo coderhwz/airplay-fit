@@ -10,6 +10,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import io.github.airplayreceiver.R;
 
@@ -40,7 +41,8 @@ public final class MainActivity extends Activity implements ReceiverService.Stat
                 int height = settings.videoHeight();
                 int next;
                 if (height == 1080) {
-                    next = ReceiverService.supportsUltraHighDefinition(MainActivity.this) ? 2160 : 720;
+                    next = ReceiverService.supportsUltraHighDefinition(MainActivity.this, settings.maxFrameRate())
+                            ? 2160 : 720;
                 } else if (height == 2160) {
                     next = 720;
                 } else {
@@ -52,6 +54,17 @@ public final class MainActivity extends Activity implements ReceiverService.Stat
             }
         });
         updateResolutionLabel();
+
+        Button frameRateButton = findViewById(R.id.frame_rate_button);
+        frameRateButton.setText(getString(R.string.frame_rate_limit, settings.maxFrameRate()));
+        frameRateButton.setOnClickListener(view -> {
+            int fps = settings.maxFrameRate() == 30 ? 60 : 30;
+            settings.setMaxFrameRate(fps);
+            frameRateButton.setText(getString(R.string.frame_rate_limit, fps));
+            updateResolutionLabel();
+            ReceiverService.restart(this);
+            Toast.makeText(this, R.string.frame_rate_reconnect, Toast.LENGTH_LONG).show();
+        });
 
         findViewById(R.id.rename_button).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -98,7 +111,7 @@ public final class MainActivity extends Activity implements ReceiverService.Stat
 
     private void updateResolutionLabel() {
         int height = settings.videoHeight();
-        if (height >= 2160 && !ReceiverService.supportsUltraHighDefinition(this)) {
+        if (height >= 2160 && !ReceiverService.supportsUltraHighDefinition(this, settings.maxFrameRate())) {
             height = 1080;
         }
         resolutionButton.setText(height >= 2160 ? R.string.resolution_2160

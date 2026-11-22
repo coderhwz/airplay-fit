@@ -8,10 +8,10 @@ public final class ReceiverConfiguration {
 
     /**
      * AirPlay feature bits, as advertised by UxPlay: photo, screen mirroring, audio, legacy pairing
-     * (bit 27) and FairPlay SAP v2.5. Video URL playback (bit 0) is left off on purpose.
+     * (bit 27), FairPlay SAP v2.5 and HTTP video playback and HLS (bits 0 and 4).
      */
-    public static final long FEATURES = 0x5A7FFEE6L;
-    public static final String FEATURES_TEXT = "0x5A7FFEE6,0x0";
+    public static final long FEATURES = 0x5A7FFEF7L;
+    public static final String FEATURES_TEXT = "0x5A7FFEF7,0x0";
     public static final String MODEL = "AppleTV3,2";
     public static final String SOURCE_VERSION = "220.68";
 

@@ -71,6 +71,11 @@
             android:layout_marginTop="10dp" />
 
         <Button
+            android:id="@+id/frame_rate_button"
+            style="@style/TelevisionButton"
+            android:layout_marginTop="10dp" />
+
+        <Button
             android:id="@+id/start_on_boot_button"
             style="@style/TelevisionButton"
             android:layout_marginTop="10dp" />

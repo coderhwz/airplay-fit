@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="application_name">AirPlay Receiver</string>
+    <string name="application_name" translatable="false">AirPlay Fit</string>
     <string name="notification_channel_name">AirPlay receiver</string>
     <string name="notification_title">AirPlay receiver is running</string>
     <string name="rename_button">Rename</string>
@@ -10,8 +10,63 @@
     <string name="start_on_boot_on">Start on boot: on</string>
     <string name="start_on_boot_off">Start on boot: off</string>
     <string name="restart_button">Restart receiver</string>
-    <string name="instructions">On an iPhone, iPad or Mac, open Control Center, choose Screen Mirroring, and pick this name. Music apps can play here through their AirPlay button.</string>
+    <string name="instructions">In Control Center on your iPhone, iPad or Mac, choose Screen Mirroring and select this receiver. While mirroring, press OK or Menu to adjust the picture.</string>
     <string name="resolution_1080">Quality: 1080p</string>
     <string name="resolution_720">Quality: 720p (faster)</string>
     <string name="resolution_2160">Quality: 4K (Mac only)</string>
+    <string name="frame_rate_limit">Frame rate limit: %1$d fps</string>
+    <string name="frame_rate_reconnect">Reconnect to apply. Your device chooses the actual frame rate.</string>
+    <string name="framing_title">Picture mode</string>
+    <string name="framing_quick_hint">Left/right · OK to apply</string>
+    <string name="framing_select_hint">Up/down · OK to apply · Back</string>
+    <string name="framing_adjust_hint">Left/right to adjust · Back</string>
+    <string name="framing_more">More</string>
+    <string name="framing_more_title">More picture modes</string>
+    <string name="framing_more_help">Aspect ratios, rotation, manual crop and zoom.</string>
+    <string name="framing_active" translatable="false">✓  %1$s</string>
+    <string name="framing_fit">Original ratio</string>
+    <string name="framing_wide">Crop wide video to 16:9</string>
+    <string name="framing_manual">Manual crop</string>
+    <string name="crop_left">Left</string>
+    <string name="crop_top">Top</string>
+    <string name="crop_right">Right</string>
+    <string name="crop_bottom">Bottom</string>
+    <string name="crop_percent">%1$s: %2$d%%</string>
+    <string name="framing_fit_help">Fit the entire frame without stretching or cropping.</string>
+    <string name="framing_wide_help">Trim both sides of wide video before fitting it.</string>
+    <string name="framing_manual_help" formatted="false">Trim each source edge independently in 1% steps.</string>
+    <string name="framing_auto">Auto crop</string>
+    <string name="framing_auto_help">Ignore likely scrolling comments and lock once the black borders are stable.</string>
+    <string name="framing_auto_locked_help">Crop locked. Press OK to detect the borders again.</string>
+    <string name="framing_fill">Fill screen</string>
+    <string name="framing_fill_help">Fill the screen and crop any overflow.</string>
+    <string name="framing_stretch">Stretch to screen</string>
+    <string name="framing_stretch_help">Fill both axes. The picture may change shape.</string>
+    <string name="framing_actual">Original pixels (1:1)</string>
+    <string name="framing_actual_help">Show one video pixel per output pixel. Large frames may be clipped.</string>
+    <string name="framing_4_3">Force 4:3</string>
+    <string name="framing_14_9">Force 14:9</string>
+    <string name="framing_16_9">Force 16:9</string>
+    <string name="framing_ratio_help">Reshape the entire frame to this aspect ratio and fit it to the screen.</string>
+    <string name="framing_nonlinear">Nonlinear stretch</string>
+    <string name="framing_nonlinear_help">Expand narrow video more at the sides than at the center.</string>
+    <string name="framing_zoom_pan">Zoom and pan</string>
+    <string name="framing_zoom_pan_help">Set the zoom relative to Fit and move the image in either direction.</string>
+    <string name="framing_zoom_level">Zoom</string>
+    <string name="framing_offset_x">Horizontal position</string>
+    <string name="framing_offset_y">Vertical position</string>
+    <string name="framing_rotate">Rotation: %1$d°</string>
+    <string name="framing_rotate_help">Press to turn 90° clockwise. Works with any mode.</string>
+    <string name="cast_direct">Direct video</string>
+    <string name="cast_mirror">Screen mirroring</string>
+    <string name="cast_reconnecting">Waiting for the sender to reconnect…</string>
+    <string name="cast_buffering">Buffering…</string>
+    <string name="cast_playing">Playing</string>
+    <string name="cast_paused">Paused</string>
+    <string name="cast_video_error">This video could not be played.</string>
+    <string name="cast_statistics">%1$s · %2$d×%3$d\nFrame rate: %4$s  |  Bitrate: %5$s\nDecoder drops: %6$s</string>
+    <string name="cast_controls_hint">OK: Play/pause · Left/right: Seek 10 s · Up: Stats · Menu: Picture</string>
+    <string name="cast_progress">%1$s  ·  %2$s / %3$s\n%4$s</string>
+    <string name="cast_fps">%1$.1f fps</string>
+    <string name="cast_bitrate">%1$.2f Mbps</string>
 </resources>

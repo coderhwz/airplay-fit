@@ -16,6 +16,7 @@
 
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:banner="@drawable/banner"
         android:icon="@mipmap/launcher_icon"
         android:label="@string/application_name"
@@ -40,7 +41,7 @@
             android:exported="false"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
-            android:taskAffinity="io.github.airplayreceiver.display"
+            android:taskAffinity="${applicationId}.display"
             android:theme="@style/DisplayTheme" />
 
         <service

@@ -7,11 +7,11 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'io.github.airplayreceiver'
+        applicationId 'com.hwz.airplayfit'
         minSdk 22
         targetSdk 28
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 8
+        versionName '0.1.0-fit.8'
     }
 
     buildTypes {

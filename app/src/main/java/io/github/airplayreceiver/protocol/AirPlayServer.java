@@ -5,6 +5,7 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -34,6 +35,9 @@ public final class AirPlayServer {
     private volatile boolean running;
     private final List<Connection> connections = new ArrayList<>();
     private Connection streamingConnection;
+    private VideoPlayback playback;
+    private InetAddress playbackPeer;
+    private String playbackSession;
     /** At most one audio stream may feed the speaker, whichever connection set it up. */
     private AudioStreamReceiver activeAudioReceiver;
     /** Separate from the server lock, which is taken before connection locks; this one is taken after. */
@@ -78,6 +82,7 @@ public final class AirPlayServer {
             } catch (IOException ignored) {
             }
             open = new ArrayList<>(connections);
+            stopPlayback();
         }
         for (Connection connection : open) {
             connection.close();
@@ -89,6 +94,7 @@ public final class AirPlayServer {
         Connection current;
         synchronized (this) {
             current = streamingConnection;
+            stopPlayback();
         }
         if (current != null) {
             current.close();
@@ -125,12 +131,39 @@ public final class AirPlayServer {
     }
 
     private synchronized void claimStreaming(Connection connection) {
+        stopPlayback();
         Connection previous = streamingConnection;
         streamingConnection = connection;
         if (previous != null && previous != connection) {
             ReceiverLog.i(TAG, "New client takes over from " + previous.remoteAddress);
             previous.stopStreams();
         }
+    }
+
+    private synchronized void beginPlayback(Connection connection, ControlMessage request, VideoPlayback video) {
+        if (streamingConnection != null) {
+            streamingConnection.stopStreams();
+            streamingConnection = null;
+        }
+        playback = video;
+        playbackPeer = connection.socket.getInetAddress();
+        playbackSession = request.header("X-Apple-Session-ID");
+        listener.onPlaybackStarted(video);
+    }
+
+    private synchronized VideoPlayback ownedPlayback(Connection connection, ControlMessage request) {
+        if (playback == null || !playbackPeer.equals(connection.socket.getInetAddress())) return null;
+        String session = request.header("X-Apple-Session-ID");
+        return playbackSession == null || playbackSession.equals(session) ? playback : null;
+    }
+
+    private synchronized void stopPlayback() {
+        if (playback == null) return;
+        VideoPlayback ended = playback;
+        playback = null;
+        playbackPeer = null;
+        playbackSession = null;
+        listener.onPlaybackStopped(ended);
     }
 
     private void activateAudioReceiver(AudioStreamReceiver receiver) {
@@ -185,6 +218,7 @@ public final class AirPlayServer {
                     if (request == null) {
                         break;
                     }
+                    if (request.method.startsWith("HTTP/")) continue;
                     ControlMessage.Response response = new ControlMessage.Response();
                     try {
                         handle(request, response);
@@ -223,7 +257,7 @@ public final class AirPlayServer {
                 socket.close();
             } catch (IOException ignored) {
             }
-            boolean wasStreaming = stopStreams();
+            boolean wasStreaming = stopStreams(true);
             if (releaseStreaming(this) || wasStreaming) {
                 listener.onClientDisconnected();
             }
@@ -232,11 +266,16 @@ public final class AirPlayServer {
 
         /** Stops every stream this connection started. Returns true when any was running. */
         synchronized boolean stopStreams() {
+            return stopStreams(false);
+        }
+
+        synchronized boolean stopStreams(boolean interrupted) {
             boolean any = false;
             if (mirrorReceiver != null) {
                 mirrorReceiver.stop();
                 mirrorReceiver = null;
-                listener.onMirroringStopped();
+                if (interrupted) listener.onMirroringInterrupted();
+                else listener.onMirroringStopped();
                 any = true;
             }
             if (audioReceiver != null) {
@@ -320,6 +359,36 @@ public final class AirPlayServer {
             } else if (method.equals("GET") && path.equals("/slideshow-features")) {
                 response.body("text/x-apple-plist+xml", ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                         + "<plist version=\"1.0\"><dict><key>themes</key><array/></dict></plist>\n").getBytes(ASCII));
+            } else if (method.equals("POST") && (path.equals("/play") || path.startsWith("/play?"))) {
+                try {
+                    beginPlayback(this, request, VideoPlayback.parse(request));
+                } catch (UnsupportedOperationException unsupported) {
+                    response.status(415, "Unsupported Media Type");
+                } catch (IllegalArgumentException invalid) {
+                    response.status(400, "Bad Request");
+                }
+            } else if (method.equals("GET") && path.equals("/playback-info")) {
+                VideoPlayback video = ownedPlayback(this, request);
+                VideoPlayback.State state = video == null ? VideoPlayback.State.IDLE : listener.playbackState(video);
+                response.body("text/x-apple-plist+xml", state.playbackInfo());
+            } else if (method.equals("GET") && path.equals("/scrub")) {
+                VideoPlayback video = ownedPlayback(this, request);
+                VideoPlayback.State state = video == null ? VideoPlayback.State.IDLE : listener.playbackState(video);
+                String scrub = "duration: " + state.durationMs / 1000.0 + "\r\nposition: "
+                        + state.positionMs / 1000.0 + "\r\n";
+                response.body("text/parameters", scrub.getBytes(ASCII));
+            } else if (method.equals("POST") && path.startsWith("/scrub?")) {
+                VideoPlayback video = ownedPlayback(this, request);
+                Double seconds = playbackParameter(path, "position");
+                if (video == null) response.status(404, "Not Found");
+                else if (seconds == null || seconds < 0) response.status(400, "Bad Request");
+                else listener.onPlaybackSeek(video, Math.round(seconds * 1000));
+            } else if (method.equals("POST") && path.startsWith("/rate?")) {
+                VideoPlayback video = ownedPlayback(this, request);
+                Double rate = playbackParameter(path, "value");
+                if (video == null) response.status(404, "Not Found");
+                else if (rate == null || (rate != 0 && rate != 1)) response.status(400, "Bad Request");
+                else listener.onPlaybackRate(video, rate == 1);
             } else if (method.equals("PUT") && path.startsWith("/photo")) {
                 String action = request.header("X-Apple-AssetAction");
                 if (request.body.length > 0 && (action == null || !action.equals("cacheOnly"))) {
@@ -328,12 +397,29 @@ public final class AirPlayServer {
                     response.status(412, "Precondition Failed");
                 }
             } else if (method.equals("POST") && path.equals("/stop")) {
-                listener.onPhotoStopped();
+                synchronized (AirPlayServer.this) {
+                    if (ownedPlayback(this, request) != null) stopPlayback();
+                    else if (playback == null) listener.onPhotoStopped();
+                }
             } else {
                 ReceiverLog.i(TAG, "Unhandled request " + method + " " + path + " " + request.protocol);
                 response.status(request.protocol.startsWith("RTSP") ? 200 : 404,
                         request.protocol.startsWith("RTSP") ? "OK" : "Not Found");
             }
+        }
+
+        private Double playbackParameter(String path, String parameter) {
+            int query = path.indexOf('?');
+            for (String value : path.substring(query + 1).split("&")) {
+                if (!value.startsWith(parameter + "=")) continue;
+                try {
+                    double result = Double.parseDouble(value.substring(parameter.length() + 1));
+                    return Double.isNaN(result) || Double.isInfinite(result) ? null : result;
+                } catch (NumberFormatException invalid) {
+                    return null;
+                }
+            }
+            return null;
         }
 
         private Map<String, Object> info(ControlMessage request) {
@@ -475,12 +561,12 @@ public final class AirPlayServer {
                         MediaKeys.MirrorDecryptor decryptor = new MediaKeys.MirrorDecryptor(sessionKey, connectionIdentifier);
                         synchronized (this) {
                             if (mirrorReceiver != null) mirrorReceiver.stop();
-                            mirrorReceiver = new MirrorStreamReceiver(decryptor, listener);
+                            mirrorReceiver = new MirrorStreamReceiver(decryptor, listener, this::mirrorLost);
+                            listener.onMirroringStarted();
                             mirrorReceiver.start();
                             replyStream.put("dataPort", (long) mirrorReceiver.localPort());
                         }
                         replyStream.put("type", 110L);
-                        listener.onMirroringStarted();
                         ReceiverLog.i(TAG, "Mirroring stream on port " + replyStream.get("dataPort"));
                     } else if (type == 96) {
                         int compressionType = (int) longValue(stream.get("ct"));
@@ -513,6 +599,12 @@ public final class AirPlayServer {
                 reply.put("streams", replyStreams);
             }
             response.body("application/x-apple-binary-plist", BinaryPropertyList.write(reply));
+        }
+
+        private synchronized void mirrorLost(MirrorStreamReceiver source) {
+            if (mirrorReceiver != source || closed) return;
+            mirrorReceiver = null;
+            listener.onMirroringInterrupted();
         }
 
         private void setParameter(ControlMessage request) {

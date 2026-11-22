@@ -22,6 +22,8 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
 import android.view.WindowManager;
+import android.view.Surface;
+import android.widget.Toast;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ import io.github.airplayreceiver.protocol.MulticastDnsResponder;
 import io.github.airplayreceiver.protocol.ReceiverConfiguration;
 import io.github.airplayreceiver.protocol.ReceiverListener;
 import io.github.airplayreceiver.protocol.ReceiverLog;
+import io.github.airplayreceiver.protocol.VideoPlayback;
 
 /**
  * Foreground service that keeps the receiver discoverable, owns the network servers, and routes
@@ -44,7 +47,6 @@ public final class ReceiverService extends Service implements ReceiverListener {
     private static final int NOTIFICATION_IDENTIFIER = 1;
     private static final String CHANNEL_IDENTIFIER = "receiver";
     private static final int CONTROL_PORT = 7000;
-    private static final int MAXIMUM_FRAMES_PER_SECOND = 30;
     private static final String ACTION_RESTART = "io.github.airplayreceiver.RESTART";
 
     /** What the status screen shows. */
@@ -76,6 +78,18 @@ public final class ReceiverService extends Service implements ReceiverListener {
 
     private final VideoRenderer videoRenderer = new VideoRenderer();
     private final AudioRenderer audioRenderer = new AudioRenderer();
+    private final MirrorStatistics mirrorStatistics = new MirrorStatistics();
+    private DirectVideoPlayer directPlayer;
+    private Surface displaySurface;
+    private boolean directSurface;
+    private volatile VideoPlayback playback;
+    private volatile boolean mirrorReconnecting;
+    private volatile long initialDrops;
+    private final Runnable reconnectExpired = () -> {
+        mirrorReconnecting = false;
+        updateActivityStatus();
+        closeDisplayIfIdle();
+    };
 
     private AirPlayServer server;
     private MulticastDnsResponder responder;
@@ -126,12 +140,67 @@ public final class ReceiverService extends Service implements ReceiverListener {
         return photo;
     }
 
-    boolean isMirroring() {
-        return mirroring;
+    boolean displayActive() {
+        return mirroring || mirrorReconnecting || playback != null || photo != null;
+    }
+
+    boolean isDirectPlayback() {
+        return playback != null;
+    }
+
+    boolean isMirrorReconnecting() {
+        return mirrorReconnecting;
+    }
+
+    DirectVideoPlayer.Snapshot directStatistics() {
+        return directPlayer.snapshot();
+    }
+
+    MirrorStatistics.Sample mirrorStatistics() {
+        return mirrorStatistics.current();
+    }
+
+    long droppedMirrorFrames() {
+        return Math.max(0, videoRenderer.droppedFrames() - initialDrops);
+    }
+
+    void setDisplaySurface(Surface surface) {
+        displaySurface = surface;
+        routeVideoSurface();
+    }
+
+    private void routeVideoSurface() {
+        boolean useDirect = playback != null;
+        if (useDirect != directSurface) {
+            if (directSurface) directPlayer.setSurface(null);
+            else if (displaySurface != null) videoRenderer.setSurface(null);
+            directSurface = useDirect;
+        }
+        if (directSurface) directPlayer.setSurface(displaySurface);
+        else videoRenderer.setSurface(displaySurface);
+    }
+
+    void togglePlayback() {
+        VideoPlayback current = playback;
+        if (current != null) directPlayer.toggle(current);
+    }
+
+    void setPlaybackRunning(boolean playing) {
+        VideoPlayback current = playback;
+        if (current != null) directPlayer.setPlaying(current, playing);
+    }
+
+    void adjustPlaybackPosition(long offsetMs) {
+        VideoPlayback current = playback;
+        if (current != null) directPlayer.seek(current, offsetMs, true);
     }
 
     /** Ends the current AirPlay session, as when the user presses Back on the display. */
     void disconnectClient() {
+        mirroring = false;
+        cancelMirrorGrace();
+        VideoPlayback active = playback;
+        if (active != null) onPlaybackStopped(active);
         final AirPlayServer current = server;
         if (current != null) {
             worker.post(new Runnable() {
@@ -151,6 +220,23 @@ public final class ReceiverService extends Service implements ReceiverListener {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        directPlayer = new DirectVideoPlayer(new DirectVideoPlayer.Listener() {
+            @Override
+            public void onSize(VideoPlayback video, int width, int height) {
+                if (width > 0 && height > 0) mainHandler.post(() -> {
+                    if (playback == video) DisplayActivity.updateVideoSize(width, height);
+                });
+            }
+
+            @Override
+            public void onEnded(VideoPlayback video, boolean failed) {
+                mainHandler.post(() -> {
+                    if (playback != video) return;
+                    if (failed) Toast.makeText(ReceiverService.this, R.string.cast_video_error, Toast.LENGTH_LONG).show();
+                    onPlaybackStopped(video);
+                });
+            }
+        });
         ReceiverLog.setSink(new ReceiverLog.Sink() {
             @Override
             public void write(int level, String tag, String message, Throwable error) {
@@ -202,6 +288,8 @@ public final class ReceiverService extends Service implements ReceiverListener {
     @Override
     public void onDestroy() {
         unregisterReceiver(connectivityReceiver);
+        cancelMirrorGrace();
+        directPlayer.release();
         worker.removeCallbacksAndMessages(null);
         worker.post(new Runnable() {
             @Override
@@ -227,7 +315,7 @@ public final class ReceiverService extends Service implements ReceiverListener {
     private final Runnable startReceiver = new Runnable() {
         @Override
         public void run() {
-            if (server != null) {
+            if (server != null && responder != null) {
                 return;
             }
             ReceiverSettings settings = new ReceiverSettings(ReceiverService.this);
@@ -237,13 +325,17 @@ public final class ReceiverService extends Service implements ReceiverListener {
                 worker.postDelayed(this, 5000);
                 return;
             }
-            Point size = videoSize(settings.videoHeight());
+            int frameRate = settings.maxFrameRate();
+            Point size = videoSize(settings.videoHeight(), frameRate);
             ReceiverConfiguration configuration = new ReceiverConfiguration(settings.name(),
                     settings.deviceIdentifier(), settings.identitySeed(), size.x, size.y,
-                    MAXIMUM_FRAMES_PER_SECOND, CONTROL_PORT);
+                    frameRate, CONTROL_PORT);
             try {
-                server = new AirPlayServer(configuration, ReceiverService.this);
-                server.start();
+                if (server == null) {
+                    AirPlayServer created = new AirPlayServer(configuration, ReceiverService.this);
+                    created.start();
+                    server = created;
+                }
                 List<MulticastDnsResponder.Service> services = new ArrayList<>();
                 services.add(new MulticastDnsResponder.Service(configuration.name, "_airplay._tcp.local",
                         CONTROL_PORT, server.airPlayTxtRecord()));
@@ -258,7 +350,7 @@ public final class ReceiverService extends Service implements ReceiverListener {
                 publishStatus(true, configuration.name, network.address.getHostAddress(), "Ready");
             } catch (Exception error) {
                 ReceiverLog.e(TAG, "Could not start the receiver", error);
-                stopReceiver();
+                stopAdvertising();
                 publishStatus(false, settings.name(), network.address.getHostAddress(),
                         "Could not start: " + error.getMessage() + ". Retrying.");
                 worker.postDelayed(this, 5000);
@@ -266,16 +358,20 @@ public final class ReceiverService extends Service implements ReceiverListener {
         }
     };
 
-    private void stopReceiver() {
+    private void stopAdvertising() {
         if (responder != null) {
             responder.stop();
             responder = null;
         }
+        advertisedAddress = null;
+    }
+
+    private void stopReceiver() {
+        stopAdvertising();
         if (server != null) {
             server.stop();
             server = null;
         }
-        advertisedAddress = null;
     }
 
     private final BroadcastReceiver connectivityReceiver = new BroadcastReceiver() {
@@ -289,7 +385,7 @@ public final class ReceiverService extends Service implements ReceiverListener {
                     boolean changed = current == null ? advertisedAddress != null : !current.equals(advertisedAddress);
                     if (changed) {
                         ReceiverLog.i(TAG, "Network changed to " + current + ", restarting receiver");
-                        stopReceiver();
+                        stopAdvertising();
                         worker.removeCallbacks(startReceiver);
                         startReceiver.run();
                     }
@@ -298,8 +394,8 @@ public final class ReceiverService extends Service implements ReceiverListener {
         }
     };
 
-    private Point videoSize(int height) {
-        if (height >= 2160 && supportsUltraHighDefinition(this)) {
+    private Point videoSize(int height, int frameRate) {
+        if (height >= 2160 && supportsUltraHighDefinition(this, frameRate)) {
             return new Point(3840, 2160);
         }
         if (height <= 720) {
@@ -308,8 +404,8 @@ public final class ReceiverService extends Service implements ReceiverListener {
         return new Point(1920, 1080);
     }
 
-    /** True when the display runs at 4K and a hardware H.264 decoder can keep up with 4K at 30 fps. */
-    static boolean supportsUltraHighDefinition(Context context) {
+    /** True when the display and hardware H.264 decoder support 4K at the requested rate. */
+    static boolean supportsUltraHighDefinition(Context context, int frameRate) {
         if (Build.VERSION.SDK_INT < 23) {
             return false;
         }
@@ -324,7 +420,8 @@ public final class ReceiverService extends Service implements ReceiverListener {
             }
             for (String type : info.getSupportedTypes()) {
                 if (type.equalsIgnoreCase("video/avc")
-                        && info.getCapabilitiesForType(type).getVideoCapabilities().areSizeAndRateSupported(3840, 2160, 30)) {
+                        && info.getCapabilitiesForType(type).getVideoCapabilities()
+                                .areSizeAndRateSupported(3840, 2160, frameRate)) {
                     return true;
                 }
             }
@@ -353,7 +450,11 @@ public final class ReceiverService extends Service implements ReceiverListener {
     private synchronized void updateActivityStatus() {
         String activity;
         String client = clientName != null ? clientName : "a device";
-        if (mirroring && audioPlaying) {
+        if (playback != null) {
+            activity = getString(R.string.cast_direct);
+        } else if (mirrorReconnecting) {
+            activity = getString(R.string.cast_reconnecting);
+        } else if (mirroring && audioPlaying) {
             activity = "Mirroring " + client + " with sound";
         } else if (mirroring) {
             activity = "Mirroring " + client;
@@ -369,7 +470,7 @@ public final class ReceiverService extends Service implements ReceiverListener {
         Status current = status;
         publishStatus(current.advertising, current.name, current.address, activity);
 
-        boolean streaming = mirroring || audioPlaying;
+        boolean streaming = mirroring || audioPlaying || playback != null;
         if (streaming && !wakeLock.isHeld()) {
             wakeLock.acquire();
         } else if (!streaming && wakeLock.isHeld()) {
@@ -406,8 +507,7 @@ public final class ReceiverService extends Service implements ReceiverListener {
             public void run() {
                 Intent intent = new Intent(ReceiverService.this, DisplayActivity.class)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
-                startActivity(intent);
-                DisplayActivity.refreshPhoto();
+                if (!DisplayActivity.refreshMedia()) startActivity(intent);
             }
         });
     }
@@ -416,10 +516,10 @@ public final class ReceiverService extends Service implements ReceiverListener {
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (!mirroring && !photoShowing) {
+                if (!displayActive()) {
                     DisplayActivity.closeIfOpen();
                 } else {
-                    DisplayActivity.refreshPhoto();
+                    DisplayActivity.refreshMedia();
                 }
             }
         });
@@ -448,20 +548,91 @@ public final class ReceiverService extends Service implements ReceiverListener {
 
     @Override
     public void onMirroringStarted() {
+        cancelMirrorGrace();
+        initialDrops = videoRenderer.droppedFrames();
+        mirrorStatistics.reset();
         mirroring = true;
         photoShowing = false;
         photo = null;
         videoRenderer.reset();
         updateActivityStatus();
+        mainHandler.post(DisplayActivity::resetAutoCrop);
         showDisplay();
     }
 
     @Override
     public void onMirroringStopped() {
+        cancelMirrorGrace();
         mirroring = false;
         videoRenderer.reset();
         updateActivityStatus();
         closeDisplayIfIdle();
+    }
+
+    @Override
+    public void onMirroringInterrupted() {
+        if (!mirroring) return;
+        mirroring = false;
+        mirrorReconnecting = true;
+        videoRenderer.reset();
+        mainHandler.removeCallbacks(reconnectExpired);
+        mainHandler.postDelayed(reconnectExpired, 8000);
+        updateActivityStatus();
+        closeDisplayIfIdle();
+    }
+
+    private void cancelMirrorGrace() {
+        mirrorReconnecting = false;
+        mainHandler.removeCallbacks(reconnectExpired);
+    }
+
+    @Override
+    public void onPlaybackStarted(VideoPlayback video) {
+        playback = video;
+        cancelMirrorGrace();
+        photo = null;
+        photoShowing = false;
+        mainHandler.post(() -> {
+            if (playback != video) return;
+            DisplayActivity.resetAutoCrop();
+            DisplayActivity.updateVideoSize(0, 0);
+            routeVideoSurface();
+            directPlayer.start(video);
+            showDisplay();
+        });
+        updateActivityStatus();
+    }
+
+    @Override
+    public void onPlaybackStopped(VideoPlayback video) {
+        if (playback != video) return;
+        playback = null;
+        mainHandler.post(() -> {
+            directPlayer.stop(video);
+            if (playback == null) routeVideoSurface();
+        });
+        updateActivityStatus();
+        closeDisplayIfIdle();
+    }
+
+    @Override
+    public void onPlaybackRate(VideoPlayback video, boolean playing) {
+        mainHandler.post(() -> {
+            if (playback == video) directPlayer.setPlaying(video, playing);
+        });
+    }
+
+    @Override
+    public void onPlaybackSeek(VideoPlayback video, long positionMs) {
+        mainHandler.post(() -> {
+            if (playback == video) directPlayer.seek(video, positionMs, false);
+        });
+    }
+
+    @Override
+    public VideoPlayback.State playbackState(VideoPlayback video) {
+        DirectVideoPlayer.Snapshot state = directPlayer.snapshot();
+        return state.video == video ? state.state : VideoPlayback.State.IDLE;
     }
 
     @Override
@@ -471,6 +642,7 @@ public final class ReceiverService extends Service implements ReceiverListener {
 
     @Override
     public void onVideoFrame(byte[] accessUnit, long timestampNanoseconds, boolean keyFrame) {
+        mirrorStatistics.frame(accessUnit.length);
         videoRenderer.onFrame(accessUnit, timestampNanoseconds, keyFrame);
     }
 
